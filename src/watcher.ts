@@ -18,13 +18,40 @@ async function sha256Hex(input: string): Promise<string> {
  * Fetches a page and returns its HTML content.
  * @param url The URL to fetch.
  */
-async function fetchSiteContent(url: string): Promise<string> {
+async function fetchHtml(url: string): Promise<string> {
 	log.info(`Starting fetch of ${url}`);
 	const res = await fetch(url, { headers: { accept: 'text/html,application/xhtml+xml' } });
 	if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
-	const text = await res.text();
-	log.info('Fetch completed successfully', { bytes: text.length, url });
-	return text;
+	const html = await res.text();
+	log.info('Fetch completed successfully', { bytes: html.length, url });
+	return html;
+}
+
+/**
+ * Extracts the inner HTML of the <body> element if present.
+ * If not found, returns null.
+ * @param html Full HTML document as text.
+ */
+function extractBody(html: string): string | null {
+	const m = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+	if (!m) return null;
+	return m[1] ?? '';
+}
+
+/**
+ * Retrieves the content to be used for hashing/comparison: prefers the body inner HTML,
+ * falling back to the full HTML when a body is not present.
+ * @param url The page URL.
+ */
+async function getComparableContent(url: string): Promise<string> {
+	const html = await fetchHtml(url);
+	const body = extractBody(html);
+	if (body != null) {
+		log.info('Using <body> for comparison', { url, bytes: body.length });
+		return body;
+	}
+	log.info('No <body> found; using full HTML for comparison', { url, bytes: html.length });
+	return html;
 }
 
 /**
@@ -34,7 +61,7 @@ async function fetchSiteContent(url: string): Promise<string> {
 export async function checkSiteAndMaybeNotify(): Promise<void> {
 	for (const url of CONFIG.TARGET_URLS) {
 		try {
-			const content = await fetchSiteContent(url);
+			const content = await getComparableContent(url);
 			const hash = await sha256Hex(content);
 			const cachedHash = await getCachedHash(url);
 
