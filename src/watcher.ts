@@ -1,11 +1,11 @@
 import { CONFIG } from './config.ts';
 import { log } from './logger.ts';
-import { getCachedHash, setCache } from './kv.ts';
+import { getCachedHash, keysFor, kv, setCache } from './kv.ts';
 import { notifyAdmin } from './notifier.ts';
 
 /**
- * Computes the SHA-256 hash of a string and returns it as a hex string.
- * @param input The string to hash.
+ * Computa o hash SHA-256 de uma string e o retorna em formato hexadecimal.
+ * @param input A string a ser hasheada.
  */
 async function sha256Hex(input: string): Promise<string> {
 	const enc = new TextEncoder().encode(input);
@@ -15,8 +15,10 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 /**
- * Fetches a page and returns its HTML content.
- * @param url The URL to fetch.
+ * Faz fetch de uma página e retorna seu conteúdo HTML (texto integral).
+ * Usa um header Accept para priorizar HTML.
+ * @param url A URL a ser buscada.
+ * @throws Error quando a resposta não for OK (código HTTP não 2xx) ou em falhas de rede.
  */
 async function fetchHtml(url: string): Promise<string> {
 	log.info(`Starting fetch of ${url}`);
@@ -28,9 +30,9 @@ async function fetchHtml(url: string): Promise<string> {
 }
 
 /**
- * Extracts the inner HTML of the <body> element if present.
- * If not found, returns null.
- * @param html Full HTML document as text.
+ * Extrai o HTML interno do elemento <body>, se presente.
+ * Caso não encontre, retorna null.
+ * @param html Documento HTML completo como texto.
  */
 function extractBody(html: string): string | null {
 	const m = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
@@ -39,9 +41,13 @@ function extractBody(html: string): string | null {
 }
 
 /**
- * Retrieves the content to be used for hashing/comparison: prefers the body inner HTML,
- * falling back to the full HTML when a body is not present.
- * @param url The page URL.
+ * Obtém o conteúdo a ser usado para comparação (hashing):
+ * - Prefere o HTML interno do <body>; se ausente, usa o HTML completo.
+ * - Aplica sanitização para remover campos dinâmicos e normalizar whitespace,
+ *   reduzindo falsos positivos.
+ * @param url A URL da página.
+ * @returns O conteúdo já sanitizado que será usado para cálculo do hash.
+ * @throws Error propagada de falhas de rede/fetch.
  */
 async function getComparableContent(url: string): Promise<string> {
 	const html = await fetchHtml(url);
@@ -60,11 +66,11 @@ async function getComparableContent(url: string): Promise<string> {
 }
 
 /**
- * Removes known dynamic fields that change per request, such as hidden CSRF tokens,
- * to avoid spurious hash changes.
- * Currently removes hidden CSRF-like inputs (e.g., _token/csrf), HTML comments,
- * <script>/<style> blocks, and normalizes whitespace.
- * @param content HTML fragment to sanitize (typically the body inner HTML).
+ * Remove campos dinâmicos conhecidos que variam por requisição (ex.: tokens CSRF),
+ * a fim de evitar mudanças espúrias no hash.
+ * Atualmente remove inputs hidden do tipo CSRF (_token/csrf/etc.), comentários HTML,
+ * blocos <script>/<style>, e normaliza whitespace.
+ * @param content Fragmento HTML a ser sanitizado (geralmente o inner HTML do body).
  */
 function sanitizeDynamicContent(content: string): string {
 	let out = content;
@@ -80,32 +86,69 @@ function sanitizeDynamicContent(content: string): string {
 	return out;
 }
 
+export type CheckResult = {
+	url: string;
+	changed: boolean | null; // null quando não havia cache anterior ou em erro
+	status: 'initialized' | 'changed' | 'unchanged' | 'error';
+	hash?: string;
+	previousHash?: string | null;
+	updatedAt: string | null;
+	error?: string;
+};
+
 /**
- * Checks the target site, compares with KV cache, updates cache, and notifies the admin if changed.
- * Emits logs for success, error, cache equal and cache different cases.
+ * Verifica uma única URL e retorna seu resultado. Responsável por atualizar o KV
+ * e enviar notificação quando há mudança detectada.
  */
-export async function checkSiteAndMaybeNotify(): Promise<void> {
-	for (const url of CONFIG.TARGET_URLS) {
-		try {
-			const content = await getComparableContent(url);
-			const hash = await sha256Hex(content);
-			const cachedHash = await getCachedHash(url);
+async function checkOne(url: string): Promise<CheckResult> {
+	try {
+		const content = await getComparableContent(url);
+		const hash = await sha256Hex(content);
+		const cachedHash = await getCachedHash(url);
 
-			if (!cachedHash) {
-				await setCache(url, content, hash);
-				log.info('[CACHE INIT] No previous cache found; initialized.', { url });
-				continue;
-			}
-
-			if (cachedHash !== hash) {
-				log.info('[CACHE DIFFERENT] Site content changed.', { url, cachedHash, newHash: hash });
-				await setCache(url, content, hash);
-				await notifyAdmin(`Url Watcher: o conteúdo de ${url} mudou.`);
-			} else {
-				log.info('[CACHE EQUAL] Site content unchanged.', { url, hash });
-			}
-		} catch (err) {
-			log.error('Check failed', { url, err: (err as Error).message });
+		if (!cachedHash) {
+			await setCache(url, content, hash);
+			log.info('[CACHE INIT] No previous cache found; initialized.', { url });
+			const updatedAt = (await kv.get<string>(keysFor(url).updatedAt)).value ?? null;
+			return { url, changed: null, status: 'initialized', hash, previousHash: null, updatedAt };
 		}
+
+		if (cachedHash !== hash) {
+			log.info('[CACHE DIFFERENT] Site content changed.', { url, cachedHash, newHash: hash });
+			await setCache(url, content, hash);
+			await notifyAdmin(`Url Watcher: o conteúdo de ${url} mudou.`);
+			const updatedAt = (await kv.get<string>(keysFor(url).updatedAt)).value ?? null;
+			return { url, changed: true, status: 'changed', hash, previousHash: cachedHash, updatedAt };
+		}
+
+		log.info('[CACHE EQUAL] Site content unchanged.', { url, hash });
+		const updatedAt = (await kv.get<string>(keysFor(url).updatedAt)).value ?? null;
+		return { url, changed: false, status: 'unchanged', hash, previousHash: cachedHash, updatedAt };
+	} catch (err) {
+		log.error('Check failed', { url, err: (err as Error).message });
+		return { url, changed: null, status: 'error', updatedAt: null, error: (err as Error).message };
 	}
+}
+
+/**
+ * Verifica todas as URLs configuradas, compara com o cache no KV, atualiza o cache,
+ * e notifica o admin quando algum conteúdo muda.
+ * - Executa as verificações em paralelo.
+ * - Não lança exceções: agrega os resultados via Promise.allSettled e retorna, para cada URL,
+ *   um objeto CheckResult com status 'error' quando houver falha.
+ * @returns Array de CheckResult, na mesma ordem de CONFIG.TARGET_URLS.
+ */
+export async function checkSiteAndMaybeNotify(): Promise<CheckResult[]> {
+	const promises = CONFIG.TARGET_URLS.map((url) => checkOne(url));
+	const settled = await Promise.allSettled(promises);
+	return settled.map((
+		r,
+		idx,
+	) => (r.status === 'fulfilled' ? r.value : {
+		url: CONFIG.TARGET_URLS[idx],
+		changed: null,
+		status: 'error',
+		updatedAt: null,
+		error: (r.reason instanceof Error ? r.reason.message : String(r.reason)),
+	}));
 }

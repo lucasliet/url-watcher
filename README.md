@@ -13,7 +13,7 @@ changes.
 
 ## Behavior
 
-- On startup: fetches each configured URL, initializes cache if empty, logs success/errors.
+- No startup check: checks are triggered when you GET / or /health.
 - Daily at 08:00 UTC (Deno Deploy via Deno.cron): re-checks; if a hash differs, updates cache and notifies admin with the specific URL.
 - Logs:
   - [CHECK SUCCESS] for successful operations.
@@ -22,6 +22,14 @@ changes.
   - [CACHE EQUAL] when unchanged (per URL).
 - Sanitization before hashing: strips hidden CSRF-like inputs (e.g., _token), HTML comments, <script>/<style> blocks, and normalizes whitespace to avoid false
   positives.
+
+### Endpoints
+
+- GET / or /health: Triggers a check of all configured URLs and returns JSON:
+
+  { ok: true, targets: [ { url, changed: true|false|null, updatedAt } ] }
+
+  - changed: true when content changed (notification sent), false when unchanged, null on first run (no previous cache) or error.
 
 ## Local development
 

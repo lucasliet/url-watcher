@@ -4,17 +4,15 @@ import { checkSiteAndMaybeNotify } from '@/watcher.ts';
 import { log } from '@/logger.ts';
 
 /**
- * Bootstraps the application: performs an initial check, creates the HTTP app,
- * sets up scheduling for Deno Deploy, and starts the server in local dev.
+ * Inicializa a aplicação: cria o app HTTP, configura o agendamento no Deno Deploy
+ * e inicia o servidor em desenvolvimento local.
  *
- * Behavior:
- * - Always triggers an initial content check on startup.
- * - In Deno Deploy: registers a daily cron at 08:00 UTC and attaches a fetch listener.
- * - In local development: listens on the configured port for health/info endpoints.
+ * Comportamento:
+ * - Não há verificação automática na inicialização; as verificações ocorrem quando GET / ou /health é chamado.
+ * - Em Deno Deploy: registra um cron diário às 08:00 UTC e anexa um listener de fetch.
+ * - Em desenvolvimento local: escuta na porta configurada para os endpoints de health/info.
  */
 function initialize() {
-	checkSiteAndMaybeNotify();
-
 	const app = createApp();
 
 	if (CONFIG.IS_DEPLOY) {

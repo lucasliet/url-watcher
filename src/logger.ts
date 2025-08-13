@@ -1,8 +1,8 @@
 /**
- * Internal logger utility to print tagged lines with optional structured data.
- * @param tag Either 'SUCCESS' or 'ERROR'.
- * @param message Main text to log.
- * @param extra Optional structured object appended to the line.
+ * Utilitário interno de logging para imprimir linhas com tag e dados estruturados opcionais.
+ * @param tag 'SUCCESS' ou 'ERROR'.
+ * @param message Mensagem principal a ser registrada.
+ * @param extra Objeto opcional com dados estruturados anexados ao log.
  */
 function base(tag: 'SUCCESS' | 'ERROR', message: string, extra?: Record<string, unknown>) {
 	const line = `[CHECK ${tag}] ${new Date().toISOString()} - ${message}`;
@@ -14,11 +14,11 @@ function base(tag: 'SUCCESS' | 'ERROR', message: string, extra?: Record<string, 
 }
 
 /**
- * Logging facade with success/error tags.
+ * Fachada de logging com tags de sucesso/erro.
  */
 export const log = {
-	/** Logs a success/info message. */
+	/** Registra uma mensagem de sucesso/informativa. */
 	info: (message: string, extra?: Record<string, unknown>) => base('SUCCESS', message, extra),
-	/** Logs an error message. */
+	/** Registra uma mensagem de erro. */
 	error: (message: string, extra?: Record<string, unknown>) => base('ERROR', message, extra),
 };

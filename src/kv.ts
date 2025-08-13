@@ -1,7 +1,9 @@
 export const kv = await Deno.openKv();
 
 /**
- * Computes KV keys for a given URL namespace.
+ * Computa as chaves no KV para um determinado namespace de URL.
+ * @param url URL que servirá como namespace das chaves.
+ * @returns Objeto imutável com as chaves de content, hash e updatedAt.
  */
 export function keysFor(url: string) {
 	return {
@@ -12,8 +14,9 @@ export function keysFor(url: string) {
 }
 
 /**
- * Retrieves the cached content hash from Deno KV.
- * @returns The cached SHA-256 hex string, or null if not present.
+ * Recupera do Deno KV o hash de conteúdo previamente armazenado para a URL.
+ * @param url A URL cuja entrada de hash deve ser lida.
+ * @returns A string hex SHA-256 em cache, ou null se ausente.
  */
 export async function getCachedHash(url: string): Promise<string | null> {
 	const entry = await kv.get<string>(keysFor(url).hash);
@@ -21,9 +24,12 @@ export async function getCachedHash(url: string): Promise<string | null> {
 }
 
 /**
- * Atomically updates the cached content, its hash, and the last update timestamp.
- * @param content The full HTML content to cache.
- * @param hash The SHA-256 hex string of the content.
+ * Atualiza de forma atômica o conteúdo em cache, seu hash e o timestamp de última atualização.
+ * O campo updatedAt é armazenado como string ISO (new Date().toISOString()).
+ * @param url A URL cujos dados de cache devem ser atualizados.
+ * @param content O HTML completo a ser armazenado em cache.
+ * @param hash A string hex SHA-256 do conteúdo.
+ * @throws Error se a operação atômica do KV falhar.
  */
 export async function setCache(url: string, content: string, hash: string): Promise<void> {
 	const now = new Date().toISOString();

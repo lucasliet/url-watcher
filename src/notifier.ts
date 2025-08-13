@@ -8,9 +8,9 @@ if (CONFIG.TOKEN) {
 }
 
 /**
- * Sends a Telegram DM to the configured admin user.
- * If the token or admin ID are missing, logs an error and returns.
- * @param message The message to send.
+ * Envia uma DM no Telegram para o usuário admin configurado.
+ * Se o token ou o ID do admin estiverem ausentes, registra um erro e retorna.
+ * @param message A mensagem a ser enviada.
  */
 export async function notifyAdmin(message: string) {
 	if (!CONFIG.TOKEN || !BOT) {

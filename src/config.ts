@@ -1,5 +1,5 @@
 /**
- * Global configuration derived from environment variables and defaults.
+ * Configuração global derivada de variáveis de ambiente e valores padrão.
  */
 export const CONFIG = {
 	TOKEN: Deno.env.get('TELEGRAM_CHAT_BOT_TOKEN') ?? undefined,
@@ -12,8 +12,8 @@ export const CONFIG = {
 	})(),
 	IS_DEPLOY: Boolean(Deno.env.get('DENO_DEPLOYMENT_ID')),
 	/**
-	 * Comma-separated list of URLs to watch. Falls back to the previous single URL
-	 * when not provided for backward compatibility.
+	 * Lista de URLs (separadas por vírgula) a serem monitoradas.
+	 * Mantém compatibilidade retroativa com a URL única anterior quando não fornecida.
 	 */
 	TARGET_URLS: (() => {
 		const fromEnv = Deno.env.get('WATCH_URLS')?.split(',').map((s) => s.trim()).filter(Boolean);
