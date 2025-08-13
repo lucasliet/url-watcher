@@ -1,4 +1,3 @@
-
 /**
  * Internal logger utility to print tagged lines with optional structured data.
  * @param tag Either 'SUCCESS' or 'ERROR'.

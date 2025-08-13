@@ -1,6 +1,6 @@
 import { Application } from 'oak';
 import { oakCors } from 'oak-cors';
-import { kv, keysFor } from './kv.ts';
+import { keysFor, kv } from './kv.ts';
 import { CONFIG } from './config.ts';
 
 /**

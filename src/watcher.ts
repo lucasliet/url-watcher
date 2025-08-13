@@ -46,12 +46,38 @@ function extractBody(html: string): string | null {
 async function getComparableContent(url: string): Promise<string> {
 	const html = await fetchHtml(url);
 	const body = extractBody(html);
+	const content = body != null ? body : html;
 	if (body != null) {
 		log.info('Using <body> for comparison', { url, bytes: body.length });
-		return body;
+	} else {
+		log.info('No <body> found; using full HTML for comparison', { url, bytes: html.length });
 	}
-	log.info('No <body> found; using full HTML for comparison', { url, bytes: html.length });
-	return html;
+	const sanitized = sanitizeDynamicContent(content);
+	if (sanitized.length !== content.length) {
+		log.info('Sanitized dynamic fields from content before hashing', { url, removedBytes: content.length - sanitized.length });
+	}
+	return sanitized;
+}
+
+/**
+ * Removes known dynamic fields that change per request, such as hidden CSRF tokens,
+ * to avoid spurious hash changes.
+ * Currently removes hidden CSRF-like inputs (e.g., _token/csrf), HTML comments,
+ * <script>/<style> blocks, and normalizes whitespace.
+ * @param content HTML fragment to sanitize (typically the body inner HTML).
+ */
+function sanitizeDynamicContent(content: string): string {
+	let out = content;
+	// Remove hidden CSRF-like inputs
+	out = out.replace(/<input\b[^>]*\btype=(?:"|')hidden(?:"|')[^>]*\bname=(?:"|')(?:_token|csrf|csrf_token|authenticity_token)(?:"|')[^>]*>/gis, '');
+	// Remove HTML comments
+	out = out.replace(/<!--([\s\S]*?)-->/g, '');
+	// Remove script and style tags entirely
+	out = out.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gis, '');
+	out = out.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gis, '');
+	// Normalize whitespace
+	out = out.replace(/\s+/g, ' ').trim();
+	return out;
 }
 
 /**
