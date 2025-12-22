@@ -16,9 +16,9 @@ function initialize() {
 	const app = createApp();
 
 	if (CONFIG.IS_DEPLOY) {
-		Deno.cron('Url Watcher status check', '0 8 * * *', async () => {
-			await checkSiteAndMaybeNotify();
-		});
+		// Deno.cron('Url Watcher status check', '0 8 * * *', async () => {
+		// 	await checkSiteAndMaybeNotify();
+		// });
 
 		addEventListener('fetch', (event: any) => {
 			event.respondWith(
