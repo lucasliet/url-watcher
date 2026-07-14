@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { keysFor, kv } from './kv.ts';
-import { checkSiteAndMaybeNotify } from './watcher.ts';
+import { checkSiteAndMaybeNotify, type NotifyFn } from './watcher.ts';
+import { notifyAdmin } from './notifier.ts';
 
 /**
  * Cria e configura a aplicação Hono para o Url Watcher.
@@ -22,9 +23,12 @@ import { checkSiteAndMaybeNotify } from './watcher.ts';
  * Tratamento de erros:
  * - GET / e /health retornam HTTP 500 com um objeto JSON contendo a mensagem de erro se ocorrer exceção durante o processamento.
  *
+ * @param opts.notify Função de notificação injetada (default: notifyAdmin). Em testes,
+ *                     passar um stub no-op para evitar disparar Telegram real.
  * @returns Instância configurada de Hono.
  */
-export function createApp() {
+export function createApp(opts: { notify?: NotifyFn } = {}) {
+	const notify: NotifyFn = opts.notify ?? notifyAdmin;
 	const app = new Hono();
 
 	app.use('*', cors());
@@ -50,7 +54,7 @@ export function createApp() {
 	// `app.on` (não `app.get`) aceita múltiplos paths no segundo argumento.
 	app.on('GET', ['/', '/health'], async (c) => {
 		try {
-			const results = await checkSiteAndMaybeNotify();
+			const results = await checkSiteAndMaybeNotify(notify);
 			const targets = await Promise.all(results.map(async (r) => ({
 				url: r.url,
 				changed: r.changed,

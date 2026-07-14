@@ -5,9 +5,10 @@ import { notifyAdmin } from './notifier.ts';
 
 /**
  * Computa o hash SHA-256 de uma string e o retorna em formato hexadecimal.
+ * Exportada para permitir testes unitários diretos da função de hashing.
  * @param input A string a ser hasheada.
  */
-async function sha256Hex(input: string): Promise<string> {
+export async function sha256Hex(input: string): Promise<string> {
 	const enc = new TextEncoder().encode(input);
 	const digest = await crypto.subtle.digest('SHA-256', enc);
 	const bytes = new Uint8Array(digest);
@@ -31,10 +32,10 @@ async function fetchHtml(url: string): Promise<string> {
 
 /**
  * Extrai o HTML interno do elemento <body>, se presente.
- * Caso não encontre, retorna null.
+ * Caso não encontre, retorna null. Exportada para testes unitários.
  * @param html Documento HTML completo como texto.
  */
-function extractBody(html: string): string | null {
+export function extractBody(html: string): string | null {
 	const m = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
 	if (!m) return null;
 	return m[1] ?? '';
@@ -69,10 +70,10 @@ async function getComparableContent(url: string): Promise<string> {
  * Remove campos dinâmicos conhecidos que variam por requisição (ex.: tokens CSRF),
  * a fim de evitar mudanças espúrias no hash.
  * Atualmente remove inputs hidden do tipo CSRF (_token/csrf/etc.), comentários HTML,
- * blocos <script>/<style>, e normaliza whitespace.
+ * blocos <script>/<style>, e normaliza whitespace. Exportada para testes unitários.
  * @param content Fragmento HTML a ser sanitizado (geralmente o inner HTML do body).
  */
-function sanitizeDynamicContent(content: string): string {
+export function sanitizeDynamicContent(content: string): string {
 	let out = content;
 	// Remove hidden CSRF-like inputs
 	out = out.replace(/<input\b[^>]*\btype=(?:"|')hidden(?:"|')[^>]*\bname=(?:"|')(?:_token|csrf|csrf_token|authenticity_token)(?:"|')[^>]*>/gis, '');
@@ -97,10 +98,20 @@ export type CheckResult = {
 };
 
 /**
+ * Tipo da função de notificação injetada em checkOne/checkSiteAndMaybeNotify.
+ * Permite que testes passem um stub no-op em vez de chamar notifyAdmin real
+ * (que construiria o Bot do grammy e dispararia DMs no Telegram).
+ */
+export type NotifyFn = (message: string) => Promise<void>;
+
+/**
  * Verifica uma única URL e retorna seu resultado. Responsável por atualizar o KV
  * e enviar notificação quando há mudança detectada.
+ * @param url A URL a ser verificada.
+ * @param notify Função de notificação injetada (default: notifyAdmin). Em testes,
+ *               passar um stub no-op para evitar disparar Telegram real.
  */
-async function checkOne(url: string): Promise<CheckResult> {
+async function checkOne(url: string, notify: NotifyFn = notifyAdmin): Promise<CheckResult> {
 	try {
 		const content = await getComparableContent(url);
 		const hash = await sha256Hex(content);
@@ -116,7 +127,7 @@ async function checkOne(url: string): Promise<CheckResult> {
 		if (cachedHash !== hash) {
 			log.info('[CACHE DIFFERENT] Site content changed.', { url, cachedHash, newHash: hash });
 			await setCache(url, content, hash);
-			await notifyAdmin(`Url Watcher: o conteúdo de ${url} mudou.`);
+			await notify(`Url Watcher: o conteúdo de ${url} mudou.`);
 			const updatedAt = (await kv.get<string>(keysFor(url).updatedAt)).value ?? null;
 			return { url, changed: true, status: 'changed', hash, previousHash: cachedHash, updatedAt };
 		}
@@ -136,10 +147,12 @@ async function checkOne(url: string): Promise<CheckResult> {
  * - Executa as verificações em paralelo.
  * - Não lança exceções: agrega os resultados via Promise.allSettled e retorna, para cada URL,
  *   um objeto CheckResult com status 'error' quando houver falha.
+ * @param notify Função de notificação injetada (default: notifyAdmin). Em testes,
+ *               passar um stub no-op para evitar disparar Telegram real.
  * @returns Array de CheckResult, na mesma ordem de CONFIG.TARGET_URLS.
  */
-export async function checkSiteAndMaybeNotify(): Promise<CheckResult[]> {
-	const promises = CONFIG.TARGET_URLS.map((url) => checkOne(url));
+export async function checkSiteAndMaybeNotify(notify: NotifyFn = notifyAdmin): Promise<CheckResult[]> {
+	const promises = CONFIG.TARGET_URLS.map((url) => checkOne(url, notify));
 	const settled = await Promise.allSettled(promises);
 	return settled.map((
 		r,
@@ -149,6 +162,6 @@ export async function checkSiteAndMaybeNotify(): Promise<CheckResult[]> {
 		changed: null,
 		status: 'error',
 		updatedAt: null,
-		error: (r.reason instanceof Error ? r.reason.message : String(r.reason)),
+		error: r.reason instanceof Error ? r.reason.message : String(r.reason),
 	}));
 }
