@@ -1,10 +1,10 @@
-import { Application } from 'oak';
-import { oakCors } from 'oak-cors';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { keysFor, kv } from './kv.ts';
 import { checkSiteAndMaybeNotify } from './watcher.ts';
 
 /**
- * Cria e configura a aplicação Oak para o Url Watcher.
+ * Cria e configura a aplicação Hono para o Url Watcher.
  *
  * Endpoints:
  * - GET / e /health:
@@ -14,72 +14,59 @@ import { checkSiteAndMaybeNotify } from './watcher.ts';
  *     - changed: boolean | null - Indica se o conteúdo mudou desde a última verificação.
  *     - updatedAt: string | null - Timestamp ISO da última atualização, ou null se nunca verificado.
  *   - Se updatedAt vier ausente no resultado da verificação, ele é obtido do KV.
- * - Outras rotas:
- *   - Responde com uma mensagem informativa simples indicando que o watcher está em execução.
- *   - Não há integração de webhook do Telegram.
+ * - GET /robots.txt: Serve o arquivo em static/robots.txt, com fallback mínimo se não conseguir ler.
+ * - /webhook: Rota reservada (sem handler); cai para o 404 padrão do Hono.
+ * - Demais rotas: Respondem com uma mensagem informativa simples indicando que o watcher está em execução.
+ *   Não há integração de webhook do Telegram.
  *
  * Tratamento de erros:
- * - Retorna HTTP 500 com um objeto JSON contendo a mensagem de erro se ocorrer exceção durante o processamento.
+ * - GET / e /health retornam HTTP 500 com um objeto JSON contendo a mensagem de erro se ocorrer exceção durante o processamento.
  *
- * @returns {Application} Instância configurada de Oak Application.
+ * @returns Instância configurada de Hono.
  */
 export function createApp() {
-	const app = new Application();
-	app.use(oakCors());
+	const app = new Hono();
+
+	app.use('*', cors());
 
 	// Middleware de logging
-	app.use(async (ctx, next) => {
+	app.use('*', async (c, next) => {
 		const start = Date.now();
 		await next();
 		const ms = Date.now() - start;
-		console.log(`${ctx.request.method} ${ctx.request.url} - ${ms}ms`);
+		console.log(`${c.req.method} ${c.req.url} - ${ms}ms`);
 	});
 
 	// Middleware para servir o robots.txt
-	app.use(async (ctx, next) => {
-		if (ctx.request.url.pathname === '/robots.txt') {
-			try {
-				const robotsTxt = await Deno.readTextFile('./static/robots.txt');
-				ctx.response.headers.set('Content-Type', 'text/plain');
-				ctx.response.body = robotsTxt;
-			} catch (_error) {
-				ctx.response.status = 200;
-				ctx.response.headers.set('Content-Type', 'text/plain');
-				ctx.response.body = 'User-agent: *\nDisallow: /';
-			}
-		} else {
-			await next();
+	app.get('/robots.txt', async (c) => {
+		try {
+			const robotsTxt = await Deno.readTextFile('./static/robots.txt');
+			return c.text(robotsTxt, 200, { 'content-type': 'text/plain; charset=utf-8' });
+		} catch (_error) {
+			return c.text('User-agent: *\nDisallow: /', 200, { 'content-type': 'text/plain; charset=utf-8' });
 		}
 	});
 
-	app.use(async (ctx, next) => {
+	// `app.on` (não `app.get`) aceita múltiplos paths no segundo argumento.
+	app.on('GET', ['/', '/health'], async (c) => {
 		try {
-			if (ctx.request.method === 'GET' && (ctx.request.url.pathname === '/' || ctx.request.url.pathname === '/health')) {
-				const results = await checkSiteAndMaybeNotify();
-				const targets = await Promise.all(results.map(async (r) => ({
-					url: r.url,
-					changed: r.changed,
-					updatedAt: r.updatedAt ?? (await kv.get<string>(keysFor(r.url).updatedAt)).value ?? null,
-				})));
-				ctx.response.status = 200;
-				ctx.response.headers.set('content-type', 'application/json; charset=utf-8');
-				ctx.response.body = JSON.stringify({ ok: true, targets });
-				return;
-			}
-
-			if (ctx.request.url.pathname !== '/webhook') {
-				ctx.response.status = 200;
-				ctx.response.body = 'Url Watcher running. Notifications only.';
-				return;
-			}
-
-			await next();
+			const results = await checkSiteAndMaybeNotify();
+			const targets = await Promise.all(results.map(async (r) => ({
+				url: r.url,
+				changed: r.changed,
+				updatedAt: r.updatedAt ?? (await kv.get<string>(keysFor(r.url).updatedAt)).value ?? null,
+			})));
+			return c.json({ ok: true, targets }, 200, { 'content-type': 'application/json; charset=utf-8' });
 		} catch (err) {
-			ctx.response.status = 500;
-			ctx.response.body = {
-				message: err instanceof Error ? err.message : 'Unknown error occurred',
-			};
+			return c.json({ message: err instanceof Error ? err.message : 'Unknown error occurred' }, 500);
 		}
+	});
+
+	// /webhook cai propositalmente para o 404 padrão (reservado para webhook do Telegram).
+	// Qualquer outra rota retorna a mensagem informativa (qualquer método HTTP).
+	app.all('*', (c) => {
+		if (c.req.path === '/webhook') return c.notFound();
+		return c.text('Url Watcher running. Notifications only.', 200);
 	});
 
 	return app;
