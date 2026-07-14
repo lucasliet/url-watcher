@@ -1,0 +1,3 @@
+# Deno KV local (criado por Deno.openKv() em testes e dev)
+denokv.sqlite3
+denokv.sqlite3-*

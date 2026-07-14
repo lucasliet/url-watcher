@@ -1,6 +1,8 @@
 import { CONFIG } from '@/config.ts';
 import { createApp } from '@/server.ts';
-import { checkSiteAndMaybeNotify } from '@/watcher.ts';
+// Alias com underscore: a função é usada apenas no bloco Deno.cron comentado abaixo.
+// Quando o cron for reativado, remover o underscore do alias e descomentar o uso.
+import { checkSiteAndMaybeNotify as _checkSiteAndMaybeNotify } from '@/watcher.ts';
 import { log } from '@/logger.ts';
 
 /**
@@ -21,7 +23,7 @@ function initialize() {
 	const app = createApp();
 
 	// Deno.cron('Url Watcher status check', '0 8 * * *', async () => {
-	// 	await checkSiteAndMaybeNotify();
+	// 	await _checkSiteAndMaybeNotify();
 	// });
 
 	// Deno.serve é usado em ambos os caminhos (Deploy e local). O novo Deno Deploy
