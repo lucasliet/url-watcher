@@ -22,9 +22,9 @@ import { log } from '@/logger.ts';
 function initialize() {
 	const app = createApp();
 
-	// Deno.cron('Url Watcher status check', '0 8 * * *', async () => {
-	// 	await _checkSiteAndMaybeNotify();
-	// });
+	 Deno.cron('Url Watcher status check', '0 8 * * *', async () => {
+	 	await _checkSiteAndMaybeNotify();
+	 });
 
 	// Deno.serve é usado em ambos os caminhos (Deploy e local). O novo Deno Deploy
 	// detecta Deno.serve() e o conecta ao runtime; a porta é ignorada em Deploy.
